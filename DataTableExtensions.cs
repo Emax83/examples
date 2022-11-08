@@ -11,6 +11,48 @@ namespace Repository.Extensions
     public static class DataTableExtensions
     {
 
+        
+         public static IEnumerable<dynamic> ToIEnumerable(this DataTable dataTable)
+        {
+            List<dynamic> list = new List<dynamic>();
+
+            if (dataTable == null || dataTable.Rows.Count == 0)
+                return list;
+
+            string[] cols = dataTable.Columns.Cast<DataColumn>().Select(c => c.ColumnName).ToArray();
+            foreach (DataRow row in dataTable.Rows)
+            {
+                IDictionary<string,object> instance = new ExpandoObject();
+                foreach (string colName in cols)
+                {
+                    try
+                    {
+                        //in questo caso non posso saltare, altrimenti non crea la property
+                        var value = row[colName];
+
+                        if (value == DBNull.Value)
+                            value = null;
+
+                        if (value is byte[])
+                            value = BitConverter.ToString((byte[])row[colName]);
+
+                        instance.Add(colName, value);
+                        //instance[colName] = value;
+                    }
+                    catch (Exception ex)
+                    {
+                        throw new Exception("Repository.DataTableExtensions.ToIEnumerable; Errore in fase di creazione della proprietà '" + colName + "': " + ex.Message, ex);
+                    }
+                }
+                list.Add(instance);
+            }
+
+            if (dataTable.Rows.Count != list.Count)
+                throw new Exception("Repository.DataTableExtensions.ToIEnumerable; Non è stato possibile convertire alcuni oggetti.");
+
+            return list;
+        }
+        
         /// <summary>
         /// Per usare questo metodo l'oggetto richiesto DEVE avere properties con NOMI IDENTICI alle colonne della tabella di origine
         /// </summary>
