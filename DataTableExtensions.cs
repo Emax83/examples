@@ -6,7 +6,7 @@ using System.Reflection;
 using System.Text;
 using Newtonsoft.Json;
 
-namespace RischioPaperless.Repository.Extensions
+namespace Repository.Extensions
 {
     public static class DataTableExtensions
     {
