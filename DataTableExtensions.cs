@@ -135,6 +135,118 @@ namespace Repository.Extensions
 
             return builder.ToString();
         }
+        
+        public static byte[] ToExcel(this DataTable dataTable)
+        {
+            using (var memoryStream = new System.IO.MemoryStream())
+                using (var writer = new System.IO.StreamWriter(memoryStream))
+                {
+                    writer.WriteLine("<html xmlns:v=\"urn:schemas-microsoft-com:vml\" xmlns:o=\"urn:schemas-microsoft-com:office:office\" xmlns:x=\"urn:schemas-microsoft-com:office:excel\" xmlns=\"http://www.w3.org/TR/REC-html40\">" +
+                        "<meta http-equiv=Content-Type content=\"text/html;charset=windows-1252\">" +
+                        "<meta name=ProgId content=Excel.Sheet>" +
+                        "<meta name=Generator content=\"Microsoft Excel 11\">" +
+                        "<style>table,td{font-family:Arial; font-size:10pt;color:black;}</style>" +
+                        "<!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>" + reportName + "</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->" +
+                        "</head><body><table border='1' style='border-collapse: collapse;'>");
+
+                    writer.WriteLine("<tr>");
+                    foreach (ReportColumn column in columns)
+                    {
+                        writer.WriteLine(string.Format("<td style='font-weight:bold;background-color:#cccccc;'>{0}</td>", column.HeaderText ?? column.ColumnName));
+                    }
+                    writer.WriteLine("</tr>");
+
+                    foreach (object item in list)
+                    {
+                        writer.WriteLine("<tr>");
+                        foreach (ReportColumn column in columns)
+                        {
+
+                            System.Reflection.PropertyInfo property = item.GetType().GetProperty(column.ColumnName);
+                            if (property != null && property.CanRead)
+                            {
+                                object value = property.GetValue(item);
+                                string valueType = "String";
+
+
+                                if (value == null || value is DBNull)
+                                    value = "";
+
+                                if (value is byte[])
+                                    value = BitConverter.ToString((byte[])value);
+
+                                //Type t = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+                                valueType = value.GetType().Name.Replace("System.", "").ToLower();
+                                valueType = column.DataType.Replace("System.", "").ToLower();
+                                switch (valueType)
+                                {
+                                    case "date":
+                                    case "datetime":
+                                        //mso-number-format:"dd\/mm\\ hh\:mm"  --> "dd/MM HH:mm"
+                                        if (string.IsNullOrEmpty(column.ExcelFormat))
+                                            column.ExcelFormat = "Short Date";
+                                        writer.WriteLine(string.Format("<td align=right style='mso-number-format:\"{1}\";'>{0}</td>", value, column.ExcelFormat));
+                                        break;
+
+                                    case "decimal":
+                                    case "int16":
+                                    case "int32":
+                                    case "int64":
+                                    case "int":
+                                    case "integer":
+                                        //Fixed = formato numero con decimali
+                                        //Standard = formato numero con decimali e separatore di migliaia
+                                        if (string.IsNullOrEmpty(column.ExcelFormat))
+                                            column.ExcelFormat = "Standard";
+                                        writer.WriteLine(string.Format("<td align=right style='mso-number-format:{1};'>{0}</td>", value, column.ExcelFormat));
+                                        break;
+
+                                    default://string
+                                        string bgColor = "#ffffff";
+                                        if (column.ColumnName == "sDescrizioneSLA")
+                                        {
+                                            switch (value)
+                                            {
+                                                case "Attivo":
+                                                    bgColor = "#2196F3";
+                                                    break;
+
+                                                case "Scade Domani":
+                                                    bgColor = "#4CAF50";
+                                                    break;
+
+                                                case "Scade Oggi":
+                                                    bgColor = "#ffeb3b";
+                                                    break;
+
+                                                case "Scaduto":
+                                                    bgColor = "#f44336";
+                                                    break;
+
+                                                case "N/A":
+                                                    bgColor = "#dddddd";
+                                                    break;
+                                            }
+
+                                        }
+                                        if (string.IsNullOrEmpty(column.ExcelFormat))
+                                            column.ExcelFormat = "\\@";
+                                        writer.WriteLine(string.Format("<td style='mso-number-format:\"{1}\"; background-color:{2};'>{0}</td>", Convert.ToString(value).Trim(), column.ExcelFormat, bgColor));
+                                        break;
+                                }
+
+                            }
+                        }
+                        writer.WriteLine("</tr>");
+                    }
+
+                    writer.WriteLine("</table></body></html>");
+
+                    writer.Flush();
+                    times.Add("Creazione Excel", DateTime.UtcNow - start);
+                    return memoryStream.ToArray();
+                }
+        }
 
     }
 }
