@@ -393,5 +393,70 @@ namespace MyProjectName.Controllers
             }
             return isValid;
         }
+        
+        
+        public static string GenerateRandomPassword(int length = 16, PasswordRules  passwordRules = PasswordRules.None)
+        {
+            int minlength = 8;
+            const string lowerchars = "abcdefghijklmnopqrstuvwxyz";
+            const string upperchars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+            const string mixedCase = lowerchars + upperchars;
+            const string numbers = "0123456789";
+            string specialChars = @".,;:'?@#+-*/é[](){}\!^=&%$£!";
+            string allChars = lowerchars + upperchars + numbers + specialChars;
+            string defaultChars = lowerchars + upperchars + numbers;
+
+            if (length < minlength)
+                throw new Exception("GenerateRandomPassword; Attenzione: la lunghezza richiesta è inferiore alla lunghezza minima (8)");
+
+            StringBuilder res = new StringBuilder();
+            Random rnd = new Random();
+            while (res.Length < length)
+            {
+                switch (passwordRules)
+                {
+                    case PasswordRules.All:
+                        //res.Append(lowerchars[rnd.Next(lowerchars.Length)]);
+                        //res.Append(upperchars[rnd.Next(upperchars.Length)]);
+                        //res.Append(numbers[rnd.Next(numbers.Length)]);
+                        //res.Append(specialChars[rnd.Next(specialChars.Length)]);
+                        res.Append(allChars[rnd.Next(allChars.Length)]);
+                        break;
+
+                    case PasswordRules.Digit:
+                        res.Append(numbers[rnd.Next(numbers.Length)]);
+                        break;
+
+                    case PasswordRules.LowerCase:
+                        res.Append(lowerchars[rnd.Next(lowerchars.Length)]);
+                        break;
+
+                    case PasswordRules.MixedCase:
+                        //res.Append(lowerchars[rnd.Next(lowerchars.Length)]);
+                        //res.Append(upperchars[rnd.Next(upperchars.Length)]);
+                        res.Append(mixedCase[rnd.Next(mixedCase.Length)]);
+                        break;
+
+                    case PasswordRules.SpecialChar:
+                        res.Append(specialChars[rnd.Next(specialChars.Length)]);
+                        break;
+
+                    case PasswordRules.UpperCase:
+                        res.Append(upperchars[rnd.Next(upperchars.Length)]);
+                        break;
+
+                    //case PasswordRules.None:
+                    default:
+                        //res.Append(lowerchars[rnd.Next(lowerchars.Length)]);
+                        //res.Append(upperchars[rnd.Next(upperchars.Length)]);
+                        //res.Append(numbers[rnd.Next(numbers.Length)]);
+                        res.Append(defaultChars[rnd.Next(defaultChars.Length)]);
+                        break;
+                }
+            }
+
+            return res.ToString().Left(length);
+        }
+        
     }
 }
