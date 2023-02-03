@@ -176,88 +176,67 @@ namespace MyProjectName.Controllers
                 if (file.ContentLength == 0)
                     return false;
 
-                if(file.ContentLength >  Settings.Current.MaxFileSizeUploadBytes)
+                if (file.ContentLength > Settings.Current.MaxFileSizeUploadBytes)
                     return false;
 
                 if (string.IsNullOrEmpty(pattern))
                     pattern = Settings.Current.AllowedUploadExtensions;
 
+                string fileExtension = Path.GetExtension(file.FileName).ToLower();
+                if (string.IsNullOrEmpty(fileExtension))
+                    return false; //file senza estensione
+
                 if (string.IsNullOrEmpty(pattern) == false)
                 {
-                    string ext = Path.GetExtension(RemoveDoubleExtension(file.FileName)).ToLower();
-
                     //verifico che il mime type corrisponda a quello passato
-                    string mimeType = MimeMapping.GetMimeMapping(RemoveDoubleExtension(file.FileName));
-                    if (mimeType == file.ContentType && pattern.ToLower().Contains(ext.ToLower()))
-                    {
-                        //verifico che il file non sia in realtà un file contenente caratteri codice e rinominato in immagine o altro.
-                        //questo metodo mantiene valido il file.InputStream. Con uno streamreader verrebbe chiuso e il file tornerebbe a 0 bytes.
-                        string inputContentString = "";
-                        byte[] contentBytes = new byte[file.InputStream.Length];
-                        file.InputStream.Seek(0, SeekOrigin.Begin);
-                        file.InputStream.Read(contentBytes, 0, contentBytes.Length);
-                        inputContentString = System.Text.Encoding.ASCII.GetString(contentBytes);
-                        if (System.Text.RegularExpressions.Regex.IsMatch(inputContentString, @"(<body)|(<script)|(<html)|(<iframe)|(src=)|(href=)|(public)|(void)|(function)|(return)|(<?xml)|(DOCTYPE)|(svg)",System.Text.RegularExpressions.RegexOptions.IgnoreCase))
-                        {
-                            contentBytes = null;
-                            inputContentString = null;
-                            return false;
-                        }
-                        
-                        //verifico in base ai magic bytes che posso caricare il file.
-                        if (CheckMagicBytes(contentBytes, pattern) == false)
-                        {
-                            contentBytes = null;
-                            inputContentString = null;
-                            return false;
-                        }
-                        
-                        return true;
-                    }
-                    else
+                    string mimeType = MimeMapping.GetMimeMapping(file.FileName);
+                    if (mimeType != file.ContentType || pattern.ToLower().Contains(fileExtension.ToLower()) == false)
                     {
                         return false;
                     }
                 }
 
+                if (Settings.Current.CheckContentString)
+                {
+                    //verifico che il file non sia in realtà un file contenente caratteri codice e rinominato in immagine o altro.
+                    //questo metodo mantiene valido il file.InputStream. Con uno streamreader verrebbe chiuso e il file tornerebbe a 0 bytes.
+                    byte[] contentBytes = new byte[file.InputStream.Length];
+                    file.InputStream.Seek(0, SeekOrigin.Begin);
+                    file.InputStream.Read(contentBytes, 0, contentBytes.Length);
+                    if (CheckContentString(contentBytes, file.FileName) == false)
+                    {
+                        contentBytes = null;
+                        return false;
+                    }
+                    contentBytes = null;
+                }
+
+                if (Settings.Current.CheckMagicBytes)
+                {
+                    byte[] contentBytes = new byte[file.InputStream.Length];
+                    file.InputStream.Seek(0, SeekOrigin.Begin);
+                    file.InputStream.Read(contentBytes, 0, contentBytes.Length);
+                    //verifico in base ai magic bytes che posso caricare il file.
+                    if (CheckMagicBytes(contentBytes, file.FileName) == false)
+                    {
+                        contentBytes = null;
+                        return false;
+                    }
+                    contentBytes = null;
+                }
+
                 return true;
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
-                Logger.Write(LogTypeMessage.Error, "BaseController.IsValidFile", ex);
+                General.Logger.Write(LogTypeMessage.Error, "BaseController.IsValidFile", ex);
                 return false;
             }
         }
 
         
 
-        /// <summary>
-        /// Ritorna un filename senza la doppia estensione se presente.
-        /// </summary>
-        /// <seealso cref="https://www.codeproject.com/Questions/886361/Prevent-double-file-Extension-file-upload-in-cshar"/>
-        /// <param name="fileName"></param>
-        /// <returns></returns>
-        internal string RemoveDoubleExtension(string fileName)
-        {
-            string result = fileName;
-            try
-            {
-                /*
-                 * file.nome.pdf
-                 * file nome.anno mese.docx                
-                 * eccetera...
-                 */
-                if (fileName.Split('.').Length > 2)
-                {
-                    result = Path.GetFileNameWithoutExtension(fileName);
-                }
-            }
-            catch(Exception ex)
-            {
-                Logger.Write(LogTypeMessage.Error, "BaseController.RemoveDoubleExtension('" + fileName + "')", ex);
-            }
-            return result;
-        }
+        
 
         internal string GetFileSize(long length)
         {
@@ -299,13 +278,52 @@ namespace MyProjectName.Controllers
         }
 
         /// <summary>
+        /// Verifica che il file non contenga del codice eseguibile o xss injection
+        /// </summary>
+        /// <param name="contentBytes"></param>
+        /// <returns></returns>
+        bool CheckContentString(byte[] contentBytes, string fileName)
+        {
+            string inputContentString = string.Empty;
+            try
+            {
+                //attenzione: qui potrei bloccare file validi.
+                //i file word,excel a volte contengono tag xml, si in versioni più recenti che vecchi.
+                //oppure i file excel generati a partire da un html...
+                //se proprio è necessario, stampano su PDF e poi lo allegano.
+                inputContentString = System.Text.Encoding.ASCII.GetString(contentBytes);
+                string patternCodice = @"(<body|<script|<html|<iframe|src=|href=|public |void |return |<\?doctype|<svg)";
+                if (System.Text.RegularExpressions.Regex.IsMatch(inputContentString, patternCodice, System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                {
+                    //inserisco in un log che qualcuno sta provando a caricare file malevolo contenente codice.
+                    return false;
+                }
+                else
+                {
+                    //file pulito
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                General.Logger.Write(LogTypeMessage.Error, "BaseController;CheckContentString;Errore: " + ex.ToString());
+                return false;
+            }
+            finally
+            {
+                inputContentString = string.Empty;
+            }
+        }
+        
+        /// <summary>
         /// Verifica la signature del file per verificare che sia veramente il file che dice di essere e che sia consentito.
         /// </summary>
         /// <param name="fileContent"></param>
         /// <param name="extPattern"></param>
         /// <returns></returns>
-        internal bool CheckMagicBytes(byte[] fileContent, string extPattern)
+        bool CheckMagicBytes(byte[] fileContent, string fileName)
         {
+            //è un controllo complesso: diverse tipologie di files condividono gli stessi bytes oppure la stessa tipologia ha diversi bytes.
             //dato che non posso controllare tutte le possibili estensioni, controllo solo quelle consentite, il resto non è consentito.
             //https://en.wikipedia.org/wiki/List_of_file_signatures
             //https://medium.com/@d.harish008/what-is-a-magic-byte-and-how-to-exploit-1e286da1c198
@@ -314,58 +332,63 @@ namespace MyProjectName.Controllers
             {
                 byte[] magicBytes = new byte[16]; // Read 16 bytes into an array    
                 Buffer.BlockCopy(fileContent, 0, magicBytes, 0, 16);
-                string hexSignature = BitConverter.ToString(magicBytes);
-                string ext = ""; //.pdf|.docx|.doc|.xlsx|.xls|.jpg|.jpeg|.png|.zip|.txt|.eml|.msg
+                string hexSignature = BitConverter.ToString(magicBytes).Substring(0, 11);
+                string validExtensions = "";
                 switch (hexSignature)
                 {
-                    case "aa":
-                        ext = ".pdf";
+                    case "25-50-44-46":
+                        validExtensions = ".pdf";
+                        isValid = true;
                         break;
-                    case "bb":
-                        ext = ".docx";
+                    case "50-4B-03-04":
+                        validExtensions = ".docx|.xlsx|.zip";
+                        isValid = true;
                         break;
-                    case "cc":
-                        ext = ".doc";
+                    case "D0-CF-11-E0":
+                        validExtensions = ".doc|.msg";
+                        isValid = true;
                         break;
-                    case "dd":
-                        ext = ".xlsx";
+                    case "3C-68-74-6D":
+                        validExtensions = ".xls";
+                        isValid = true;
                         break;
-                    case "ee":
-                        ext = ".xls";
+                    case "FF-D8-FF-E0":
+                        validExtensions = ".jpg";
+                        isValid = true;
                         break;
-                    case "ff":
-                        ext = ".jpg";
+                    case "89-50-4E-47":
+                        validExtensions = ".png";
+                        isValid = true;
                         break;
-                    case "gg":
-                        ext = ".png";
+                    case "73-61-64-73":
+                        validExtensions = ".txt";
+                        isValid = true;
                         break;
-                    case "hh":
-                        ext = ".zip";
-                        break;
-                    case "iii":
-                        ext = ".txt";
-                        break;
-                    case "JJ":
-                        ext = ".eml";
-                        break;
-                    case "kk":
-                        ext = ".msg";
+                    case "58-2D-53-65":
+                    case "52-65-63-65":
+                        validExtensions = ".eml";
                         break;
                     default:
-                        return false;
+                        //inserisco in un log che qualcuno sta provando a caricare file malevolo
+                        validExtensions = "";
+                        isValid = false;
+                        break;
                 }
-                if (string.IsNullOrEmpty(extPattern) == false)
+                //verifico se è una delle estensioni consentite, e se la possibile estensione corrisponde con quella del file.
+                string fileExtension = Path.GetExtension(fileName);
+                if (string.IsNullOrEmpty(validExtensions) == false && string.IsNullOrEmpty(fileExtension) == false)
                 {
-                    isValid = extPattern.ToLower().Contains(ext);
+                    isValid = validExtensions.ToLower().Contains(fileExtension.ToLower());
                 }
                 else
                 {
-                    isValid = true;
+                    //default: nego il caricamento. 
+                    isValid = false;
                 }
             }
             catch (Exception ex)
             {
-                Logger.Write(LogTypeMessage.Error, "BaseController.IsValidFile", ex);
+                General.Logger.Write(LogTypeMessage.Error, "BaseController.IsValidFile", ex);
                 isValid = false;
             }
             return isValid;
